@@ -1,0 +1,28 @@
+#Ignore node_modules directory
+node_modules/
+
+# Ignore log files
+*.log
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE files
+.vscode/
+.idea/
+
+# Ignore build and dist directories
+build/
+dist/
+
+# Ignore ESLint cache
+.eslintcache
+
+# Ignore TypeScript cache
+.tsbuildinfo
+
+# Ignore Env Files
+.env
+.env.locale
+.env.*.locale
