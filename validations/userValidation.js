@@ -19,10 +19,15 @@ exports.signupSchema = Joi.object({
     "string.empty": "Password is required",
     "string.min": "Password must be at least 6 characters",
   }),
-  confirmPassword: Joi.string().valid(Joi.ref("password")).required().messages({
+  passwordConfirm: Joi.string().valid(Joi.ref("password")).required().messages({
     "any.only": "Passwords do not match",
     "string.empty": "Confirm password is required",
   }),
+  role: {
+    type: String,
+    enum: ["user", "admin", "super-admin"],
+    default: "user",
+  },
 });
 
 exports.loginSchema = Joi.object({

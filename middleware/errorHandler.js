@@ -5,9 +5,10 @@ const handleCastErrorDB = (err) =>
   new AppError(`Invalid ${err.path}: ${err.value}`, 400);
 
 const handleDuplicateKeyDB = (err) => {
+  const field = Object.keys(err.keyValue)[0];
   const value = Object.values(err.keyValue)[0];
   return new AppError(
-    `Duplicate value: ${value}. Please use another one.`,
+    `Duplicate field: "${field}" with value "${value}". Please use another ${field}.`,
     400
   );
 };

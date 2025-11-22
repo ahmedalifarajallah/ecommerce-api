@@ -1,0 +1,45 @@
+doctype html
+html
+  head
+    meta(charset="UTF-8")
+    meta(name="viewport" content="width=device-width, initial-scale=1.0")
+    title #{subject}
+    style.
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f6f6f6;
+        padding: 20px;
+        color: #333;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #fff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      }
+      .btn {
+        display: inline-block;
+        background-color: #007bff;
+        color: #fff !important;
+        padding: 10px 20px;
+        text-decoration: none;
+        border-radius: 5px;
+      }
+      .footer {
+        font-size: 12px;
+        color: #888;
+        margin-top: 20px;
+      }
+
+  body
+    .container
+      h1 Hello #{firstName}!
+      p Welcome to the **EcommerceApi Family**! We’re excited to have you on board.
+      p You can start exploring your account by clicking the button below:
+      a.btn(href=url) Go to Your Account
+      p If the button doesn’t work, copy and paste the following link into your browser:
+      p #{url}
+      .footer
+        p This is an automated email. Please do not reply.
