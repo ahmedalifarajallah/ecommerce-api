@@ -8,10 +8,12 @@ exports.protect = async (req, res, next) => {
   // check if token exist
   if (
     req.headers.authorization &&
-    req.headers.authorization.startWith("Bearer")
+    req.headers.authorization.startsWith("Bearer")
   ) {
     token = req.headers.authorization.split(" ")[1];
   }
+
+  console.log(req.headers.authorization);
 
   if (!token) {
     return next(new AppError("You are not logged in! Please login.", 401));
@@ -24,6 +26,13 @@ exports.protect = async (req, res, next) => {
   const currentUser = await User.findById(decoded.id);
   if (!currentUser) {
     return next(new AppError("The user no longer exists.", 401));
+  }
+
+  // check if user changed password after token was issued
+  if (currentUser.changedPasswordAfter(decoded.iat)) {
+    return next(
+      new AppError("User recently changed password! Please log in again.", 401)
+    );
   }
 
   req.user = currentUser;

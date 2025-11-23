@@ -59,4 +59,8 @@ module.exports = class Email {
   async sendWelcome() {
     await this.send("welcome", "Welcome to the EcommerceApi Family!");
   }
+
+  async sendResetToken() {
+    await this.send("resetPassword", "Reset your password");
+  }
 };

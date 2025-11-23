@@ -23,11 +23,7 @@ exports.signupSchema = Joi.object({
     "any.only": "Passwords do not match",
     "string.empty": "Confirm password is required",
   }),
-  role: {
-    type: String,
-    enum: ["user", "admin", "super-admin"],
-    default: "user",
-  },
+  role: Joi.string().valid("user", "admin", "super-admin").default("user"),
 });
 
 exports.loginSchema = Joi.object({
@@ -37,5 +33,19 @@ exports.loginSchema = Joi.object({
   }),
   password: Joi.string().required().messages({
     "string.empty": "Password is required",
+  }),
+});
+
+exports.updatePasswordSchema = Joi.object({
+  currentPassword: Joi.string().required().messages({
+    "string.empty": "Current Password is required",
+  }),
+  password: Joi.string().min(6).required().messages({
+    "string.empty": "Password is required",
+    "string.min": "Password must be at least 6 characters",
+  }),
+  passwordConfirm: Joi.string().valid(Joi.ref("password")).required().messages({
+    "any.only": "Passwords do not match",
+    "string.empty": "Confirm password is required",
   }),
 });
