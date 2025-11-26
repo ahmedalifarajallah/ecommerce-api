@@ -23,6 +23,7 @@ router
   .get(getMe, getUser)
   .patch(uploadUserPhoto, resizeUserPhoto, updateMe)
   .delete(deleteMe);
+
 // Admin-only routes
 router.use(restrictTo("super-admin"));
 router.get("/", getAllUsers);

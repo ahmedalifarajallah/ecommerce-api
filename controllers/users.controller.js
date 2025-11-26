@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const AppError = require("../utils/AppError");
 const User = require("../models/User");
 const catchAsync = require("../utils/catchAsync");
@@ -14,13 +16,20 @@ exports.uploadUserPhoto = uploadImages.single("photo");
 exports.resizeUserPhoto = catchAsync(async (req, res, next) => {
   if (!req.file) return next();
 
+  const folderPath = path.join(__dirname, "../public/images/users");
+
+  // Create folder if it doesn't exist
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true });
+  }
+
   const filename = `user-${req.params.id || req.user.id}-${Date.now()}.jpeg`;
 
   await sharp(req.file.buffer)
     .resize(500, 500)
     .toFormat("jpeg")
     .jpeg({ quality: 90 })
-    .toFile(`public/images/users/${filename}`);
+    .toFile(path.join(folderPath, filename));
 
   req.file.filename = filename;
 
