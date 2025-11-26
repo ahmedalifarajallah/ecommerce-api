@@ -44,8 +44,13 @@ exports.register = catchAsync(async (req, res, next) => {
   // Validate request body
   validateRequest(signupSchema, req.body);
 
-  const { name, email, username, password, passwordConfirm, photo, role } =
+  let { name, email, username, password, passwordConfirm, photo, role } =
     req.body;
+
+  // only super-admin can assign role
+  if (!req.user || req.user.role !== "super-admin") {
+    role = "user";
+  }
 
   // Check if user already exists
   const existingUser = await User.findOne({ email });
@@ -61,7 +66,7 @@ exports.register = catchAsync(async (req, res, next) => {
     password,
     passwordConfirm,
     photo,
-    role: role || "user",
+    role,
   });
 
   // Send Welcome Email
@@ -94,33 +99,6 @@ exports.logout = (req, res) => {
 
   res.status(200).json({ status: "success", message: "Logged out." });
 };
-
-exports.updatePassword = catchAsync(async (req, res, next) => {
-  // validate request body
-  validateRequest(updatePasswordSchema, req.body);
-
-  // Get user and include password
-  const user = await User.findById(req.user.id).select("+password");
-  if (!user) return next(new AppError("User Not Found", 404));
-
-  // Check current password
-  const correctPassword = await user.correctPassword(
-    req.body.currentPassword,
-    user.password
-  );
-
-  if (!correctPassword) {
-    return next(new AppError("Your current password is wrong", 401));
-  }
-
-  // Update password
-  user.password = req.body.password;
-  user.passwordConfirm = req.body.passwordConfirm;
-  await user.save();
-
-  // Send new token
-  createSendToken(user, 200, "Password Updated Successfully!", res);
-});
 
 exports.forgotPassword = catchAsync(async (req, res, next) => {
   // Get user based on POSTed email
@@ -176,6 +154,33 @@ exports.resetPassword = catchAsync(async (req, res, next) => {
   user.passwordConfirm = req.body.passwordConfirm;
   user.passwordResetToken = undefined;
   user.passwordResetExpires = undefined;
+  await user.save();
+
+  // Send new token
+  createSendToken(user, 200, "Password Updated Successfully!", res);
+});
+
+exports.updatePassword = catchAsync(async (req, res, next) => {
+  // validate request body
+  validateRequest(updatePasswordSchema, req.body);
+
+  // Get user and include password
+  const user = await User.findById(req.user.id).select("+password");
+  if (!user) return next(new AppError("User Not Found", 404));
+
+  // Check current password
+  const correctPassword = await user.correctPassword(
+    req.body.currentPassword,
+    user.password
+  );
+
+  if (!correctPassword) {
+    return next(new AppError("Your current password is wrong", 401));
+  }
+
+  // Update password
+  user.password = req.body.password;
+  user.passwordConfirm = req.body.passwordConfirm;
   await user.save();
 
   // Send new token
