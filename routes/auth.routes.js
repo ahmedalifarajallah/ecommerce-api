@@ -31,7 +31,7 @@ module.exports = router;
 /**
  * TODO:
  * - Add email verification **DONE**
- * - create API Filter
- * - Implement APi Filter to user controllers
+ * - create API Filter **SEMI-DONE**
+ * - Implement APi Filter to user controllers **SEMI-DONE**
  * - create handleFactory controller
  */

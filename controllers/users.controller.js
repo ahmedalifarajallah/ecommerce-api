@@ -46,10 +46,16 @@ const filterObj = (obj, ...allowedFields) => {
 };
 
 exports.getAllUsers = catchAsync(async (req, res, next) => {
-  // { _id: { $ne: req.user.id } }
-  const query = new APIFeatures(User.find(), req.query).filter().sort();
+  const features = new APIFeatures(
+    User.find({ _id: { $ne: req.user.id } }),
+    req.query
+  )
+    .filter()
+    .sort()
+    .limitFields()
+    .paginate();
 
-  const users = await query.query;
+  const users = await features.query;
 
   res.status(200).json({
     status: "success",
