@@ -10,6 +10,7 @@ const {
 } = require("../validations/userValidation");
 const sharp = require("sharp");
 const { uploadImages } = require("../config/multer");
+const APIFeatures = require("../utils/APIFeatures");
 
 exports.uploadUserPhoto = uploadImages.single("photo");
 
@@ -45,7 +46,11 @@ const filterObj = (obj, ...allowedFields) => {
 };
 
 exports.getAllUsers = catchAsync(async (req, res, next) => {
-  const users = await User.find();
+  // { _id: { $ne: req.user.id } }
+  const query = new APIFeatures(User.find(), req.query).filter().sort();
+
+  const users = await query.query;
+
   res.status(200).json({
     status: "success",
     results: users.length,
