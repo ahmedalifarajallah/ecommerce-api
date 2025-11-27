@@ -3,10 +3,11 @@ const pug = require("pug");
 const htmlToText = require("html-to-text");
 
 module.exports = class Email {
-  constructor(user, url) {
+  constructor(user, url, otp = "") {
     this.to = user.email;
     this.firstName = user.name.split(" ")[0];
     this.url = url;
+    this.otp = otp;
     this.from = `EcommerceApi <${process.env.EMAIL_FROM}>`;
   }
 
@@ -41,6 +42,7 @@ module.exports = class Email {
       {
         firstName: this.firstName,
         url: this.url,
+        otp: this.otp,
         subject,
       }
     );
@@ -58,6 +60,10 @@ module.exports = class Email {
 
   async sendWelcome() {
     await this.send("welcome", "Welcome to the EcommerceApi Family!");
+  }
+
+  async sendEmailVerificationOTP() {
+    await this.send("verifyEmail", "Your Email Verification Code");
   }
 
   async sendResetToken() {

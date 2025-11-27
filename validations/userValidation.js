@@ -61,9 +61,9 @@ exports.updateMeSchema = Joi.object({
     "string.max": "Username must be less than 50 characters",
   }),
 
-  email: Joi.string().email().optional().messages({
-    "string.email": "Email must be a valid email address",
-  }),
+  // email: Joi.string().email().optional().messages({
+  //   "string.email": "Email must be a valid email address",
+  // }),
 
   photo: Joi.string().optional(),
 
@@ -86,7 +86,6 @@ exports.updateMeSchema = Joi.object({
 
 exports.adminUpdateUserSchema = Joi.object({
   name: Joi.string().optional(),
-  email: Joi.string().email().optional(),
   username: Joi.string().optional(),
   role: Joi.string().valid("user", "admin", "super-admin").optional(),
   active: Joi.boolean().optional(),

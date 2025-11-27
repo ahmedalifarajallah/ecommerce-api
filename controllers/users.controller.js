@@ -81,11 +81,10 @@ exports.updateMe = catchAsync(async (req, res, next) => {
   validateRequest(updateMeSchema, req.body);
 
   if (req.body.email) {
-    const exists = await User.findOne({ email: req.body.email });
-    if (exists) return next(new AppError("Email already taken", 400));
+    return next(new AppError("You cannot update your email", 400));
   }
 
-  const filteredBody = filterObj(req.body, "name", "username", "email");
+  const filteredBody = filterObj(req.body, "name", "username");
 
   if (req.file) filteredBody.photo = req.file.filename;
 
@@ -119,10 +118,8 @@ exports.updateUserByAdmin = catchAsync(async (req, res, next) => {
     "active"
   );
 
-  // Check if email already exists
   if (req.body.email) {
-    const exists = await User.findOne({ email: req.body.email });
-    if (exists) return next(new AppError("Email already taken", 400));
+    return next(new AppError("You cannot update user's email", 400));
   }
 
   if (req.file) filteredBody.photo = req.file.filename;

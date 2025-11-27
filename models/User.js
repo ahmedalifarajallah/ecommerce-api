@@ -17,6 +17,12 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailVerificationCode: String,
+    emailVerificationExpires: Date,
     username: {
       type: String,
       required: true,
@@ -105,6 +111,19 @@ userSchema.methods.createPasswordResetToken = function () {
     .digest("hex");
   this.passwordResetExpires = Date.now() + 10 * 60 * 1000;
   return resetToken;
+};
+
+userSchema.methods.createEmailVerificationOTP = function () {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  this.emailVerificationCode = crypto
+    .createHash("sha256")
+    .update(otp)
+    .digest("hex");
+
+  this.emailVerificationExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  return otp;
 };
 
 const User = mongoose.model("User", userSchema);

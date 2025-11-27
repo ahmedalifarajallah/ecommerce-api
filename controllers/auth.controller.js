@@ -18,6 +18,7 @@ const signToken = (user) => {
   });
 };
 
+// Send JWT as cookie
 const createSendToken = (user, statusCode, message, res) => {
   const token = signToken(user);
 
@@ -69,22 +70,37 @@ exports.register = catchAsync(async (req, res, next) => {
     role,
   });
 
-  // Send Welcome Email
-  const url = `${req.protocol}://${req.get("host")}/me`;
-  await new Email(user, url).sendWelcome();
+  const otp = user.createEmailVerificationOTP();
+  await user.save({ validateBeforeSave: false });
 
-  createSendToken(user, 201, "User created successfully", res);
+  try {
+    await new Email(user, "", otp).sendEmailVerificationOTP();
+  } catch (error) {
+    return next(
+      new AppError("There was an error sending the OTP. Try again later!", 500)
+    );
+  }
+
+  res.status(201).json({
+    status: "success",
+    message: "User created! Please verify your email using the OTP sent.",
+  });
 });
 
 exports.login = catchAsync(async (req, res, next) => {
-  const { email, password } = req.body;
-
   // Validate request body
   validateRequest(loginSchema, req.body);
 
+  const { email, password } = req.body;
+
   const user = await User.findOne({ email }).select("+password");
+
   if (!user || !(await user.correctPassword(password, user.password))) {
     return next(new AppError("Incorrect email or password", 401));
+  }
+
+  if (!user.isVerified) {
+    return res.status(401).json({ message: "Please verify your email first" });
   }
 
   createSendToken(user, 200, "Logged in successfully", res);
@@ -185,4 +201,56 @@ exports.updatePassword = catchAsync(async (req, res, next) => {
 
   // Send new token
   createSendToken(user, 200, "Password Updated Successfully!", res);
+});
+
+exports.verifyEmail = catchAsync(async (req, res, next) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    return next(new AppError("Email and OTP code are required", 400));
+  }
+
+  const hashedOtp = crypto.createHash("sha256").update(otp).digest("hex");
+
+  const user = await User.findOne({
+    email,
+    emailVerificationCode: hashedOtp,
+    emailVerificationExpires: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    return next(new AppError("Invalid or expired OTP", 400));
+  }
+
+  user.isVerified = true;
+  user.emailVerificationCode = undefined;
+  user.emailVerificationExpires = undefined;
+  await user.save();
+
+  res.status(200).json({
+    status: "success",
+    message: "Email verified successfully!",
+  });
+});
+
+exports.resendOTP = catchAsync(async (req, res, next) => {
+  const { email } = req.body;
+
+  const user = await User.findOne({ email });
+  if (!user) return next(new AppError("User not found", 404));
+  if (user.isVerified) return next(new AppError("Email already verified", 400));
+
+  const newOTP = user.createEmailVerificationOTP();
+  await user.save({ validateBeforeSave: false });
+
+  try {
+    await new Email(user, "", newOTP).sendEmailVerificationOTP();
+  } catch (err) {
+    return next(new AppError("Error sending OTP email", 500));
+  }
+
+  res.status(200).json({
+    status: "success",
+    message: "A new OTP has been sent to your email.",
+  });
 });
