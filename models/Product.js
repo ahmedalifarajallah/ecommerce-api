@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const slugify = require("slugify");
 
 const productSchema = new mongoose.Schema(
   {
@@ -46,7 +47,7 @@ const productSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    slug: { type: String, required: true, unique: true },
+    slug: { type: String, unique: true },
     metaTitle: { type: String, default: "" },
     metaDescription: { type: String, default: "" },
     metaKeywords: { type: [String], default: [] },
@@ -58,14 +59,34 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// productSchema.virtual("variants", {
-//   ref: "Variant",
-//   foreignField: "product",
-//   localField: "_id"
-// });
+// Product Variants
+productSchema.virtual("variants", {
+  ref: "ProductVariant",
+  foreignField: "product",
+  localField: "_id",
+});
 
-// productSchema.index({ title: "text", slug: 1 });
+// Product Slug
+productSchema.pre("save", function (next) {
+  this.slug = slugify(this.title, { lower: true });
+  next();
+});
+
+// Product Reviews
+productSchema.virtual("reviews", {
+  ref: "Review",
+  foreignField: "product",
+  localField: "_id",
+});
+
+// Product Index
+productSchema.index({ title: "text", slug: 1 });
 
 const Product = mongoose.model("Product", productSchema);
 
 module.exports = Product;
+
+/**
+ * Images saved even if there is an error and product not saved
+ *
+ */

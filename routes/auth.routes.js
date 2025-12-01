@@ -27,11 +27,3 @@ router.get("/logout", logout);
 router.patch("/update-password", updatePassword);
 
 module.exports = router;
-
-/**
- * TODO:
- * - Add email verification **DONE**
- * - create API Filter **SEMI-DONE**
- * - Implement APi Filter to user controllers **SEMI-DONE**
- * - create handleFactory controller
- */

@@ -53,17 +53,24 @@ const productVariantSchema = new mongoose.Schema({
   },
 });
 
-// variantSchema.pre("save", function(next) {
-//   if (!this.sku) {
-//     this.sku = `SKU-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-//   }
+productVariantSchema.pre("save", function (next) {
+  if (!this.sku) {
+    this.sku = `SKU-${Math.random()
+      .toString(36)
+      .substring(2, 10)
+      .toUpperCase()}`;
+  }
 
-//   if (!this.barcode) {
-//     this.barcode = Math.floor(Math.random() * 1e12).toString().padStart(12, "0");
-//   }
+  if (!this.barcode) {
+    this.barcode = Math.floor(Math.random() * 1e12)
+      .toString()
+      .padStart(12, "0");
+  }
 
-//   next();
-// });
+  next();
+});
+
+productVariantSchema.index({ product: 1 });
 
 const ProductVariant = mongoose.model("ProductVariant", productVariantSchema);
 
