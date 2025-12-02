@@ -89,9 +89,8 @@ exports.addProduct = catchAsync(async (req, res, next) => {
       new AppError("Discount price cannot be higher than price", 400)
     );
 
-  // Convert metaKeywords to array
-  if (req.body.metaKeywords) {
-    req.body.metaKeywords = req.body.metaKeywords.split(",");
+  if (req.file) {
+    req.body.image = req.file.filename;
   }
 
   const product = await Product.create({
@@ -118,9 +117,8 @@ exports.addProduct = catchAsync(async (req, res, next) => {
 exports.updateProduct = catchAsync(async (req, res, next) => {
   validateRequest(updateProductSchema, req.body);
 
-  // Convert metaKeywords to array
-  if (req.body.metaKeywords) {
-    req.body.metaKeywords = req.body.metaKeywords.split(",");
+  if (req.file) {
+    req.body.image = req.file.filename;
   }
 
   const product = await Product.findByIdAndUpdate(req.params.id, req.body, {

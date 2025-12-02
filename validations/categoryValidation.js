@@ -15,10 +15,7 @@ exports.createCategorySchema = Joi.object({
   parentCategory: Joi.string().custom(objectId).allow(null).optional(),
   metaTitle: Joi.string().allow("").optional(),
   metaDescription: Joi.string().allow("").optional(),
-  metaKeywords: Joi.alternatives(
-    Joi.string(),
-    Joi.array().items(Joi.string())
-  ).optional(),
+  metaKeywords: Joi.array().items(Joi.string()).optional(),
 }).unknown(false);
 
 exports.updateCategorySchema = Joi.object({
@@ -27,8 +24,5 @@ exports.updateCategorySchema = Joi.object({
   parentCategory: Joi.string().custom(objectId).allow(null).optional(),
   metaTitle: Joi.string().allow("").optional(),
   metaDescription: Joi.string().allow("").optional(),
-  metaKeywords: Joi.alternatives(
-    Joi.string(),
-    Joi.array().items(Joi.string())
-  ).optional(),
+  metaKeywords: Joi.array().items(Joi.string()).optional(),
 }).unknown(false);
