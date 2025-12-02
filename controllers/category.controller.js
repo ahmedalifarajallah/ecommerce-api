@@ -6,6 +6,11 @@ const { uploadImages } = require("../config/multer");
 const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
+const validateRequest = require("../utils/validateRequest");
+const {
+  createCategorySchema,
+  updateCategorySchema,
+} = require("../validations/categoryValidation");
 
 exports.uploadCategoryImage = uploadImages.single("image");
 
@@ -65,6 +70,27 @@ exports.getCategory = catchAsync(async (req, res, next) => {
 });
 
 exports.createCategory = catchAsync(async (req, res, next) => {
+  validateRequest(createCategorySchema, req.body);
+
+  // Convert metaKeywords from string → array
+  if (req.body.metaKeywords && typeof req.body.metaKeywords === "string") {
+    req.body.metaKeywords = req.body.metaKeywords
+      .split(",")
+      .map((kw) => kw.trim());
+  }
+
+  if (req.file) {
+    req.body.image = req.file.filename;
+  }
+
+  // Check if parent category exists
+  if (req.body.parentCategory) {
+    const exists = await Category.findById(req.body.parentCategory);
+    if (!exists) {
+      return next(new AppError("No parent category found with that ID", 404));
+    }
+  }
+
   const newCategory = await Category.create(req.body);
 
   res.status(201).json({
@@ -76,6 +102,24 @@ exports.createCategory = catchAsync(async (req, res, next) => {
 });
 
 exports.updateCategory = catchAsync(async (req, res, next) => {
+  validateRequest(updateCategorySchema, req.body);
+
+  if (req.file) {
+    req.body.image = req.file.filename;
+  }
+
+  // Check if parent category exists
+  if (req.body.parentCategory) {
+    const parentCategory = await Category.findById(req.body.parentCategory);
+    if (!parentCategory)
+      return next(new AppError("No parent category found with that ID", 404));
+  }
+
+  // Convert metaKeywords to array
+  if (req.body.metaKeywords && typeof req.body.metaKeywords === "string") {
+    req.body.metaKeywords = req.body.metaKeywords.split(",");
+  }
+
   const category = await Category.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,
