@@ -1,6 +1,7 @@
 const { required } = require("joi");
 const mongoose = require("mongoose");
 const slugify = require("slugify");
+const { seoSchema } = require("./Seo");
 
 const categorySchema = new mongoose.Schema(
   {
@@ -17,9 +18,7 @@ const categorySchema = new mongoose.Schema(
       default: null,
     },
     slug: { type: String, unique: true },
-    metaTitle: { type: String, default: "" },
-    metaDescription: { type: String, default: "" },
-    metaKeywords: { type: [String], default: [] },
+    seo: seoSchema,
   },
   {
     timestamps: true,
@@ -27,7 +26,9 @@ const categorySchema = new mongoose.Schema(
 );
 
 categorySchema.pre("save", function (next) {
-  this.slug = slugify(this.name, { lower: true });
+  if (this.isModified("name")) {
+    this.slug = slugify(this.name, { lower: true });
+  }
   next();
 });
 

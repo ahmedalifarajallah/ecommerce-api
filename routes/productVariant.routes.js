@@ -1,16 +1,17 @@
 const express = require("express");
+const {
+  createVariant,
+  updateVariant,
+  resizeVariantImgs,
+  uploadVariantImgs,
+} = require("../controllers/productVariant.controller");
+const { protect, restrictTo } = require("../middleware/auth");
 
 const router = express.Router();
 
-// router
-//   .route("/")
-//   .get((req, res) => {
-//     res.send("users");
-//   })
-//   .post((req, res) => {
-//     const name = req.body.name;
+router.use(protect, restrictTo("super-admin", "admin"));
 
-//     res.send(`Welcome ${name}`);
-//   });
+router.post("/", uploadVariantImgs, resizeVariantImgs, createVariant);
+router.patch("/:id", uploadVariantImgs, resizeVariantImgs, updateVariant);
 
 module.exports = router;

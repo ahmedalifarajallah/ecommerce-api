@@ -11,6 +11,7 @@ const {
   createCategorySchema,
   updateCategorySchema,
 } = require("../validations/categoryValidation");
+const { default: slugify } = require("slugify");
 
 exports.uploadCategoryImage = uploadImages.single("image");
 
@@ -96,6 +97,8 @@ exports.createCategory = catchAsync(async (req, res, next) => {
 
 exports.updateCategory = catchAsync(async (req, res, next) => {
   validateRequest(updateCategorySchema, req.body);
+
+  if (req.body.name) req.body.slug = slugify(req.body.name, { lower: true });
 
   if (req.file) {
     req.body.image = req.file.filename;

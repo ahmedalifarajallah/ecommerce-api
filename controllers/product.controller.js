@@ -11,6 +11,7 @@ const { uploadImages } = require("../config/multer");
 const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
+const { default: slugify } = require("slugify");
 
 exports.uploadProductMainImage = uploadImages.single("main_image");
 
@@ -116,6 +117,8 @@ exports.addProduct = catchAsync(async (req, res, next) => {
 
 exports.updateProduct = catchAsync(async (req, res, next) => {
   validateRequest(updateProductSchema, req.body);
+
+  if (req.body.title) req.body.slug = slugify(req.body.title, { lower: true });
 
   if (req.file) {
     req.body.image = req.file.filename;

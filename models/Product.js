@@ -1,16 +1,12 @@
 const mongoose = require("mongoose");
 const slugify = require("slugify");
+const { seoSchema } = require("./Seo");
 
 const productSchema = new mongoose.Schema(
   {
-    title: {
-      type: String,
-      required: true,
-    },
-    description: {
-      type: String,
-      required: true,
-    },
+    title: { type: String, required: true, trim: true, index: true },
+    description: { type: String, required: true },
+    shortDescription: String,
     main_image: {
       type: String,
     },
@@ -23,6 +19,12 @@ const productSchema = new mongoose.Schema(
       type: Number,
       min: 0,
       default: 0,
+      validate: {
+        validator: function (val) {
+          return val <= this.price;
+        },
+        message: "Discount price cannot be greater than price",
+      },
     },
     categories: [
       {
@@ -47,10 +49,9 @@ const productSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    slug: { type: String, unique: true },
-    metaTitle: { type: String, default: "" },
-    metaDescription: { type: String, default: "" },
-    metaKeywords: { type: [String], default: [] },
+    slug: { type: String, index: true, unique: true },
+    tags: [{ type: String, trim: true, lowercase: true }],
+    seo: seoSchema,
   },
   {
     timestamps: true,
@@ -59,6 +60,14 @@ const productSchema = new mongoose.Schema(
   }
 );
 
+// Product Slug
+productSchema.pre("save", function (next) {
+  if (this.isModified("title")) {
+    this.slug = slugify(this.title, { lower: true, strict: true });
+  }
+  next();
+});
+
 // Product Variants
 productSchema.virtual("variants", {
   ref: "ProductVariant",
@@ -66,27 +75,37 @@ productSchema.virtual("variants", {
   localField: "_id",
 });
 
-// Product Slug
-productSchema.pre("save", function (next) {
-  this.slug = slugify(this.title, { lower: true });
+// populate variants
+productSchema.pre(/^find/, function (next) {
+  this.populate({
+    path: "variants",
+  });
   next();
 });
 
 // Product Reviews
-productSchema.virtual("reviews", {
-  ref: "Review",
-  foreignField: "product",
-  localField: "_id",
+// productSchema.virtual("reviews", {
+//   ref: "Review",
+//   foreignField: "product",
+//   localField: "_id",
+// });
+
+// Product Variants
+productSchema.pre("findOneAndDelete", async function (next) {
+  const ProductVariant = mongoose.model("ProductVariant");
+  await ProductVariant.deleteMany({ product: this._conditions._id });
+  next();
 });
 
 // Product Index
-productSchema.index({ title: "text", slug: 1 });
+productSchema.index({
+  title: "text",
+  description: "text",
+  tags: "text",
+});
+productSchema.index({ slug: 1 });
+productSchema.index({ categories: 1 });
 
 const Product = mongoose.model("Product", productSchema);
 
 module.exports = Product;
-
-/**
- * Images saved even if there is an error and product not saved
- *
- */
