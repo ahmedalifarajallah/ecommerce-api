@@ -7,15 +7,15 @@ const {
   createProductSchema,
   updateProductSchema,
 } = require("../validations/productValidation");
+const slugify = require("slugify");
 const { uploadImages } = require("../config/multer");
 const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
-const { default: slugify } = require("slugify");
 
-exports.uploadProductMainImage = uploadImages.single("main_image");
+exports.uploadProductMainImg = uploadImages.single("main_image");
 
-exports.resizeProductMainImage = catchAsync(async (req, res, next) => {
+exports.resizeProductMainImg = catchAsync(async (req, res, next) => {
   if (!req.file) return next();
 
   const folderPath = path.join(__dirname, "../public/images/products");
@@ -33,7 +33,7 @@ exports.resizeProductMainImage = catchAsync(async (req, res, next) => {
     .jpeg({ quality: 90 })
     .toFile(path.join(folderPath, filename));
 
-  req.file.filename = filename;
+  req.body.main_image = filename;
 
   next();
 });
@@ -70,42 +70,12 @@ exports.getProduct = catchAsync(async (req, res, next) => {
 });
 
 exports.addProduct = catchAsync(async (req, res, next) => {
+  if (req.body.seo && typeof req.body.seo === "string")
+    req.body.seo = JSON.parse(req.body.seo);
+
   validateRequest(createProductSchema, req.body);
 
-  // Pick only allowed fields (whitelist)
-  const {
-    title,
-    description,
-    price,
-    discountPrice,
-    categories,
-    status,
-    metaTitle,
-    metaDescription,
-    metaKeywords,
-  } = req.body;
-
-  if (Number(discountPrice) > Number(price))
-    return next(
-      new AppError("Discount price cannot be higher than price", 400)
-    );
-
-  if (req.file) {
-    req.body.image = req.file.filename;
-  }
-
-  const product = await Product.create({
-    title,
-    description,
-    price,
-    discountPrice,
-    categories,
-    status,
-    metaTitle,
-    metaDescription,
-    metaKeywords,
-    main_image: req.body.main_image,
-  });
+  const product = await Product.create(req.body);
 
   res.status(201).json({
     status: "success",
@@ -116,20 +86,21 @@ exports.addProduct = catchAsync(async (req, res, next) => {
 });
 
 exports.updateProduct = catchAsync(async (req, res, next) => {
+  if (req.body.seo && typeof req.body.seo === "string")
+    req.body.seo = JSON.parse(req.body.seo);
+
   validateRequest(updateProductSchema, req.body);
 
-  if (req.body.title) req.body.slug = slugify(req.body.title, { lower: true });
-
-  if (req.file) {
-    req.body.image = req.file.filename;
-  }
+  if (req.body.title) req.body.slug = slugify(req.body.title, { lower: true }); // Ensure slugify is available
 
   const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,
   });
 
-  if (!product) return next(new AppError("No product found with that ID", 404));
+  if (!product) {
+    return next(new AppError("No product found with that ID", 404));
+  }
 
   res.status(200).json({
     status: "success",

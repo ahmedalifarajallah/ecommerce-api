@@ -26,6 +26,8 @@ const productSchema = new mongoose.Schema(
         message: "Discount price cannot be greater than price",
       },
     },
+    minPrice: { type: Number, default: 0 },
+    totalStock: { type: Number, default: 0 },
     categories: [
       {
         type: mongoose.Schema.ObjectId,

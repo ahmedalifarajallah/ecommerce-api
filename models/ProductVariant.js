@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-const { generateSKU } = require("../utils/skuGenerator");
 
 const productVariantSchema = new mongoose.Schema({
   product: {
@@ -62,43 +61,6 @@ const productVariantSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
-});
-
-// auto-generate SKU and barCode and availability
-productVariantSchema.pre("save", async function (next) {
-  // Auto SKU
-  if (!this.sku) {
-    const Product = mongoose.model("Product");
-    const product = await Product.findById(this.product).select("title");
-
-    this.sku = generateSKU({
-      title: product?.title,
-      color: this.color,
-      size: this.size,
-      productId: this.product.toString(),
-    });
-  }
-
-  // Auto barcode
-  if (!this.barCode) {
-    this.barCode = Math.floor(Math.random() * 1e12)
-      .toString()
-      .padStart(12, "0");
-  }
-
-  // Auto availability
-  this.isAvailable = this.quantity > 0;
-
-  next();
-});
-
-// auto update availability
-productVariantSchema.pre("findOneAndUpdate", function (next) {
-  const update = this.getUpdate();
-  if (update.quantity !== undefined) {
-    update.isAvailable = update.quantity > 0;
-  }
-  next();
 });
 
 productVariantSchema.index(
