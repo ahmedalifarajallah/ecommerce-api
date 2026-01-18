@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const slugify = require("slugify");
 const { seoSchema } = require("./Seo");
+const productVariantSchema = require("./ProductVariant");
 
 const productSchema = new mongoose.Schema(
   {
@@ -9,22 +10,6 @@ const productSchema = new mongoose.Schema(
     shortDescription: String,
     main_image: {
       type: String,
-    },
-    price: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    discountPrice: {
-      type: Number,
-      min: 0,
-      default: 0,
-      validate: {
-        validator: function (val) {
-          return val <= this.price;
-        },
-        message: "Discount price cannot be greater than price",
-      },
     },
     minPrice: { type: Number, default: 0 },
     totalStock: { type: Number, default: 0 },
@@ -45,12 +30,16 @@ const productSchema = new mongoose.Schema(
       min: 0,
       max: 5,
     },
-
     ratingsCount: {
       type: Number,
       default: 0,
       min: 0,
     },
+    variants: {
+      type: [productVariantSchema],
+      validate: (v) => v.length > 0,
+    },
+    isAvailable: { type: Boolean, default: true },
     slug: { type: String, index: true, unique: true },
     tags: [{ type: String, trim: true, lowercase: true }],
     seo: seoSchema,
@@ -59,7 +48,7 @@ const productSchema = new mongoose.Schema(
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
-  }
+  },
 );
 
 // Product Slug
@@ -70,32 +59,25 @@ productSchema.pre("save", function (next) {
   next();
 });
 
-// Product Variants
-productSchema.virtual("variants", {
-  ref: "ProductVariant",
-  foreignField: "product",
-  localField: "_id",
-});
+// Product Min Price and Total Stock
+productSchema.pre("save", function (next) {
+  if (this.variants?.length) {
+    // Set isAvailable per variant
+    this.variants.forEach((v) => {
+      v.isAvailable = v.quantity > 0;
+    });
 
-// populate variants
-productSchema.pre(/^find/, function (next) {
-  this.populate({
-    path: "variants",
-  });
-  next();
-});
+    // Set minPrice
+    this.minPrice = Math.min(
+      ...this.variants.map((v) => v.discountPrice || v.price),
+    );
 
-// Product Reviews
-// productSchema.virtual("reviews", {
-//   ref: "Review",
-//   foreignField: "product",
-//   localField: "_id",
-// });
+    // Set totalStock
+    this.totalStock = this.variants.reduce((sum, v) => sum + v.quantity, 0);
 
-// Product Variants
-productSchema.pre("findOneAndDelete", async function (next) {
-  const ProductVariant = mongoose.model("ProductVariant");
-  await ProductVariant.deleteMany({ product: this._conditions._id });
+    // Product-level availability
+    this.isAvailable = this.variants.some((v) => v.isAvailable);
+  }
   next();
 });
 

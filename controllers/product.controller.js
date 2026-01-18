@@ -12,6 +12,7 @@ const { uploadImages } = require("../config/multer");
 const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
+const { generateSKU, generateBarcode } = require("../utils/skuGenerator");
 
 exports.uploadProductMainImg = uploadImages.single("main_image");
 
@@ -69,11 +70,31 @@ exports.getProduct = catchAsync(async (req, res, next) => {
   });
 });
 
+// TODO: Handle Images Upload
 exports.addProduct = catchAsync(async (req, res, next) => {
+  // Convert variants string to array
+  if (req.body.variants && typeof req.body.variants === "string") {
+    req.body.variants = JSON.parse(req.body.variants);
+  }
+
+  // Convert seo string to object
   if (req.body.seo && typeof req.body.seo === "string")
     req.body.seo = JSON.parse(req.body.seo);
 
+  // validate request
   validateRequest(createProductSchema, req.body);
+
+  // check if there are variants and create SKU and BarCode for each variant
+  if (req.body.variants && req.body.variants.length > 0) {
+    req.body.variants.forEach((variant) => {
+      variant.sku = generateSKU({
+        title: req.body.title,
+        attributes: variant.attributes,
+        index: req.body.variants.indexOf(variant),
+      });
+      variant.barCode = generateBarcode();
+    });
+  }
 
   const product = await Product.create(req.body);
 

@@ -1,23 +1,32 @@
-// utils/skuGenerator.js
-const crypto = require("crypto");
+// Generate product code
+function generateProductCode(title) {
+  return title
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .substring(0, 4)
+    .toUpperCase();
+}
 
-exports.generateSKU = function ({ title, color, size, productId }) {
-  // Normalize title (use first 3–4 letters)
-  const T = title ? title.substring(0, 4).toUpperCase() : "PROD";
+// Generate attributes code
+function generateAttributesCode(attributes) {
+  return Object.values(attributes)
+    .map((val) => val.substring(0, 3).toUpperCase())
+    .join("-");
+}
 
-  // Color code (or N/A)
-  const C = color ? color.substring(0, 3).toUpperCase() : "NON";
+// Generate SKU
+exports.generateSKU = ({ title, attributes, index }) => {
+  const productCode = generateProductCode(title);
+  const attrCode = generateAttributesCode(attributes);
+  const sequence = String(index + 1).padStart(3, "0");
 
-  // Size code
-  const S = size ? size.toUpperCase() : "NOS"; // NO SIZE
+  return `${productCode}-${attrCode}-${sequence}`;
+};
 
-  // Short hash from product ID to prevent duplicates
-  const shortId =
-    productId && typeof productId === "string"
-      ? productId.slice(-4).toUpperCase()
-      : crypto.randomBytes(2).toString("hex").toUpperCase();
-
-  // Final SKU Format:
-  // TTTT-COL-SIZE-XXXX
-  return `${T}-${C}-${S}-${shortId}`;
+// Generate Barcode
+exports.generateBarcode = () => {
+  const timestamp = Date.now().toString().slice(-10);
+  const random = Math.floor(100 + Math.random() * 900);
+  return `${timestamp}${random}`; // 13 digits
 };

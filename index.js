@@ -60,7 +60,7 @@ app.use("/api/v1/users", usersRoutes);
 
 // Handle non-existing routes
 app.all(/.*/, (req, res, next) =>
-  next(new AppError(`Cannot find ${req.originalUrl} on this server`, 404))
+  next(new AppError(`Cannot find ${req.originalUrl} on this server`, 404)),
 );
 
 // Global error handler
