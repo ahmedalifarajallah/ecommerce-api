@@ -59,7 +59,7 @@ exports.updateProductSchema = Joi.object({
   status: Joi.string().valid("active", "inactive"),
   tags: Joi.array().items(Joi.string()),
   seo: seoSchemaValidate.optional(),
-  // variants: Joi.array().items(variantSchemaValidate).min(1).optional(), // embedded variants,  allow updates
+  variants: Joi.array().items(variantSchemaValidate).min(1).optional(), // embedded variants,  allow updates
 })
   .min(1)
   .unknown(false);

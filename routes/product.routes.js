@@ -5,8 +5,8 @@ const {
   getProduct,
   updateProduct,
   deleteProduct,
-  uploadProductMainImg,
-  resizeProductMainImg,
+  uploadProductImgs,
+  resizeProductImgs,
 } = require("../controllers/product.controller");
 const productVariantRoutes = require("./productVariant.routes");
 const { protect, restrictTo } = require("../middleware/auth");
@@ -20,9 +20,9 @@ router.get("/:id", getProduct);
 // Admin routes
 router.use(protect, restrictTo("super-admin", "admin"));
 
-router.post("/", uploadProductMainImg, resizeProductMainImg, addProduct);
+router.post("/", uploadProductImgs, resizeProductImgs, addProduct);
 
-router.patch("/:id", uploadProductMainImg, resizeProductMainImg, updateProduct);
+router.patch("/:id", uploadProductImgs, resizeProductImgs, updateProduct);
 
 router.delete("/:id", deleteProduct);
 
