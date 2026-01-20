@@ -51,10 +51,10 @@ exports.updateProductSchema = Joi.object({
   description: Joi.string().min(5),
   shortDescription: Joi.string().min(5).max(200),
   main_image: Joi.string().optional(),
-  price: Joi.number().min(0),
-  discountPrice: Joi.number().min(0).max(Joi.ref("price")).messages({
-    "number.max": "discountPrice cannot be greater than price",
-  }),
+  // price: Joi.number().min(0),
+  // discountPrice: Joi.number().min(0).max(Joi.ref("price")).messages({
+  //   "number.max": "discountPrice cannot be greater than price",
+  // }),
   categories: Joi.array().items(objectId).optional().unique(),
   status: Joi.string().valid("active", "inactive"),
   tags: Joi.array().items(Joi.string()),

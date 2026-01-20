@@ -14,6 +14,12 @@ const path = require("path");
 const fs = require("fs");
 const { generateSKU, generateBarcode } = require("../utils/skuGenerator");
 
+/**
+ * Upload product images
+ * main_image and variant_images
+ * main_image Input: main_image
+ * variant_images Input: variant_images[i]
+ */
 exports.uploadProductImgs = uploadImages.any();
 
 // Utility function to delete image files
@@ -245,7 +251,6 @@ exports.updateProduct = catchAsync(async (req, res, next) => {
     }
     return next(new AppError("No product found with that ID", 404));
   }
-
   try {
     if (req.body.seo && typeof req.body.seo === "string")
       req.body.seo = JSON.parse(req.body.seo);
