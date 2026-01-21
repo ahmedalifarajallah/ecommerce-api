@@ -19,11 +19,6 @@ const productSchema = new mongoose.Schema(
         ref: "Category",
       },
     ],
-    status: {
-      type: String,
-      enum: ["active", "inactive"],
-      default: "active",
-    },
     ratingsAverage: {
       type: Number,
       default: 0,

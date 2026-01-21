@@ -10,9 +10,12 @@ const {
 const slugify = require("slugify");
 const { uploadImages } = require("../config/multer");
 const sharp = require("sharp");
+const fs = require("fs/promises");
 const path = require("path");
-const fs = require("fs");
 const { generateSKU, generateBarcode } = require("../utils/skuGenerator");
+const { deleteFiles, createDir } = require("../utils/fileHandler");
+
+const UPLOADED_IMAGES_PATH = path.join(__dirname, "../public/images/products");
 
 /**
  * Upload product images
@@ -22,34 +25,6 @@ const { generateSKU, generateBarcode } = require("../utils/skuGenerator");
  */
 exports.uploadProductImgs = uploadImages.any();
 
-// Utility function to delete image files
-const deleteImageFiles = (imagePaths) => {
-  const folderPath = path.join(__dirname, "../public/images/products");
-
-  if (Array.isArray(imagePaths)) {
-    imagePaths.forEach((imagePath) => {
-      if (imagePath) {
-        const fullPath = path.join(folderPath, imagePath);
-        if (fs.existsSync(fullPath)) {
-          try {
-            fs.unlinkSync(fullPath);
-          } catch (err) {
-            console.error(`Error deleting image ${fullPath}:`, err.message);
-          }
-        }
-      }
-    });
-  } else if (imagePaths) {
-    const fullPath = path.join(folderPath, imagePaths);
-    if (fs.existsSync(fullPath)) {
-      try {
-        fs.unlinkSync(fullPath);
-      } catch (err) {
-        console.error(`Error deleting image ${fullPath}:`, err.message);
-      }
-    }
-  }
-};
 // Utility function to get all images from a product (main + all variant images)
 const getAllProductImages = (product) => {
   const images = [];
@@ -84,9 +59,7 @@ exports.resizeProductImgs = catchAsync(async (req, res, next) => {
       req.body.variants = JSON.parse(req.body.variants);
     }
 
-    const folderPath = path.join(__dirname, "../public/images/products");
-    if (!fs.existsSync(folderPath))
-      fs.mkdirSync(folderPath, { recursive: true });
+    await fs.mkdir(UPLOADED_IMAGES_PATH, { recursive: true });
 
     const timestamp = Date.now();
     const variantImagesMap = {};
@@ -95,7 +68,7 @@ exports.resizeProductImgs = catchAsync(async (req, res, next) => {
       // MAIN IMAGE
       if (file.fieldname === "main_image") {
         const mainImageName = `product-${timestamp}-main.jpeg`;
-        const mainImagePath = path.join(folderPath, mainImageName);
+        const mainImagePath = path.join(UPLOADED_IMAGES_PATH, mainImageName);
 
         await sharp(file.buffer)
           .resize(500, 500)
@@ -117,7 +90,7 @@ exports.resizeProductImgs = catchAsync(async (req, res, next) => {
           variantImagesMap[variantIndex] = [];
 
         const filename = `product-${timestamp}-${variantIndex}-${variantImagesMap[variantIndex].length}.jpeg`;
-        const variantImagePath = path.join(folderPath, filename);
+        const variantImagePath = path.join(UPLOADED_IMAGES_PATH, filename);
 
         await sharp(file.buffer)
           .resize(600, 350)
@@ -162,10 +135,41 @@ exports.resizeProductImgs = catchAsync(async (req, res, next) => {
   } catch (error) {
     // Clean up any images that were uploaded before the error
     if (req.uploadedImages && req.uploadedImages.length > 0) {
-      deleteImageFiles(req.uploadedImages);
+      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
     }
     throw error; // Re-throw to be caught by catchAsync
   }
+});
+
+exports.getAllProducts = catchAsync(async (req, res, next) => {
+  const features = new APIFeatures(Product.find(), req.query)
+    .filter()
+    .sort()
+    .limitFields()
+    .paginate();
+
+  const products = await features.query;
+
+  res.status(200).json({
+    status: "success",
+    results: products.length,
+    data: {
+      products,
+    },
+  });
+});
+
+exports.getProduct = catchAsync(async (req, res, next) => {
+  const product = await Product.findById(req.params.id);
+
+  if (!product) return next(new AppError("No product found with that ID", 404));
+
+  res.status(200).json({
+    status: "success",
+    data: {
+      product,
+    },
+  });
 });
 
 exports.addProduct = catchAsync(async (req, res, next) => {
@@ -203,41 +207,10 @@ exports.addProduct = catchAsync(async (req, res, next) => {
   } catch (error) {
     // Rollback: Delete uploaded images if product creation fails
     if (req.uploadedImages && req.uploadedImages.length > 0) {
-      deleteImageFiles(req.uploadedImages);
+      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
     }
     throw error; // Re-throw to be caught by catchAsync
   }
-});
-
-exports.getAllProducts = catchAsync(async (req, res, next) => {
-  const features = new APIFeatures(Product.find(), req.query)
-    .filter()
-    .sort()
-    .limitFields()
-    .paginate();
-
-  const products = await features.query;
-
-  res.status(200).json({
-    status: "success",
-    results: products.length,
-    data: {
-      products,
-    },
-  });
-});
-
-exports.getProduct = catchAsync(async (req, res, next) => {
-  const product = await Product.findById(req.params.id);
-
-  if (!product) return next(new AppError("No product found with that ID", 404));
-
-  res.status(200).json({
-    status: "success",
-    data: {
-      product,
-    },
-  });
 });
 
 exports.updateProduct = catchAsync(async (req, res, next) => {
@@ -247,7 +220,7 @@ exports.updateProduct = catchAsync(async (req, res, next) => {
   if (!existingProduct) {
     // Clean up any uploaded images if product doesn't exist
     if (req.uploadedImages && req.uploadedImages.length > 0) {
-      deleteImageFiles(req.uploadedImages);
+      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
     }
     return next(new AppError("No product found with that ID", 404));
   }
@@ -343,14 +316,14 @@ exports.updateProduct = catchAsync(async (req, res, next) => {
     if (!product) {
       // Clean up uploaded images if update fails
       if (req.uploadedImages && req.uploadedImages.length > 0) {
-        deleteImageFiles(req.uploadedImages);
+        await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
       }
       return next(new AppError("No product found with that ID", 404));
     }
 
     // Delete old images that were replaced (only after successful update)
     if (req.imagesToDelete && req.imagesToDelete.length > 0) {
-      deleteImageFiles(req.imagesToDelete);
+      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.imagesToDelete);
     }
 
     // Clear uploaded images tracking on success
@@ -365,7 +338,7 @@ exports.updateProduct = catchAsync(async (req, res, next) => {
   } catch (error) {
     // Rollback: Delete uploaded images if update fails
     if (req.uploadedImages && req.uploadedImages.length > 0) {
-      deleteImageFiles(req.uploadedImages);
+      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
     }
     throw error; // Re-throw to be caught by catchAsync
   }
@@ -380,7 +353,7 @@ exports.deleteProduct = catchAsync(async (req, res, next) => {
   // Delete all product images
   const allImages = getAllProductImages(product);
   if (allImages.length > 0) {
-    deleteImageFiles(allImages);
+    await deleteFiles(UPLOADED_IMAGES_PATH, ...allImages);
   }
 
   // Delete product from DB
