@@ -16,12 +16,12 @@ function generateAttributesCode(attributes) {
 }
 
 // Generate SKU
-exports.generateSKU = ({ title, attributes, index }) => {
+exports.generateSKU = ({ title, attributes, productId }) => {
   const productCode = generateProductCode(title);
   const attrCode = generateAttributesCode(attributes);
-  const sequence = String(index + 1).padStart(3, "0");
+  const productIdPart = productId.toString().slice(-5);
 
-  return `${productCode}-${attrCode}-${sequence}`;
+  return `${productCode}-${attrCode}-${productIdPart}`;
 };
 
 // Generate Barcode

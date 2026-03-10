@@ -1,4 +1,3 @@
-const ProductVariant = require("../models/ProductVariant");
 const Product = require("../models/Product");
 const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/AppError");
@@ -7,125 +6,122 @@ const {
   createProductVariantSchema,
   updateProductVariantSchema,
 } = require("../validations/productVariantValidation");
-const { generateSKU } = require("../utils/skuGenerator");
 const { uploadImages } = require("../config/multer");
-const sharp = require("sharp");
-const path = require("path");
-const fs = require("fs");
+const VariantService = require("../services/variant.service");
 
-exports.uploadVariantImgs = uploadImages.fields([
-  { name: "images", maxCount: 5 },
-]);
+exports.uploadVariantImgs = uploadImages.array("images", 5);
 
-exports.resizeVariantImgs = catchAsync(async (req, res, next) => {
-  if (!req.files.images) return next();
+/**
+ * ============================
+ * CREATE (single or multiple)
+ * ============================
+ */
 
-  const folderPath = path.join(__dirname, "../public/images/products");
-
-  // Create folder if it doesn't exist
-  if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
-  }
-
-  req.body.images = [];
-  await Promise.all(
-    req.files.images.map(async (file, i) => {
-      const fileName = `product-variant-${req.params.productId}-${Date.now()}-${
-        i + 1
-      }.jpeg`;
-
-      await sharp(file.buffer)
-        .resize(500, 500)
-        .toFormat("jpeg")
-        .jpeg({ quality: 90 })
-        .toFile(`public/images/products/${fileName}`);
-
-      req.body.images.push(fileName);
-    })
-  );
-
-  next();
-});
-
-exports.createVariant = catchAsync(async (req, res, next) => {
-  const productId = req.params.productId;
-
-  validateRequest(createProductVariantSchema, req.body);
-
-  const product = await Product.findById(productId);
-  if (!product) return next(new AppError("No product found with that ID", 404));
-
-  if (Number(req.body.discountPrice) > Number(req.body.price))
-    return next(
-      new AppError("Discount price cannot be higher than price", 400)
-    );
-
-  const variant = await ProductVariant.create({
-    ...req.body,
-    product: productId,
-    sku: generateSKU({
-      title: product.title,
-      color: req.body.color,
-      size: req.body.size,
-      productId: product._id.toString(),
-    }),
-    barCode: Math.floor(Math.random() * 1e12)
-      .toString()
-      .padStart(12, "0"),
-    isAvailable: Number(req.body.quantity) > 0,
-  });
-
-  res.status(201).json({
-    status: "success",
-    data: {
-      variant,
-    },
-  });
-});
-
-exports.updateVariant = catchAsync(async (req, res, next) => {
-  const productId = req.params.productId;
-  const variantId = req.params.id;
-
-  validateRequest(updateProductVariantSchema, req.body);
-
-  const product = await Product.findById(productId);
-  if (!product) return next(new AppError("No product found with that ID", 404));
-
-  if (Number(req.body.discountPrice) > Number(req.body.price))
-    return next(
-      new AppError("Discount price cannot be higher than price", 400)
-    );
-
-  const variant = await ProductVariant.findOneAndUpdate(
-    { _id: variantId, product: productId },
-    { ...req.body, isAvailable: Number(req.body.quantity) > 0 },
-    {
-      new: true,
-      runValidators: true,
+// variants before =>> [
+//   {
+//     price: 450,
+//     discountPrice: 400,
+//     quantity: 10,
+//     sku: '',
+//     barCode: '',
+//     attributes: { size: 'L' },
+//     images: [
+//       '/public/images/products/variants/product_variant-1770492010641-ec3b086ad276567e.jpeg'
+//     ]
+//   }
+// ]
+// variants after =>> [
+//   {
+//     price: 450,
+//     discountPrice: 400,
+//     quantity: 10,
+//     sku: '',
+//     barCode: '',
+//     attributes: { size: 'L' },
+//     images: [
+//       '/public/images/products/variants/product_variant-1770492010641-ec3b086ad276567e.jpeg'
+//     ]
+//   }
+// ]
+exports.createVariant = async ({ variantsData, product, session }) => {
+  // parse attributes
+  const variants = variantsData.map((v) => {
+    if (typeof v.attributes === "string") {
+      v.attributes = JSON.parse(v.attributes);
     }
-  );
-
-  if (!variant) return next(new AppError("No variant found with that ID", 404));
-
-  res.status(200).json({
-    status: "success",
-    data: {
-      variant,
-    },
-  });
-});
-
-exports.deleteVariant = catchAsync(async (req, res, next) => {
-  const variant = await ProductVariant.findOneAndDelete({
-    _id: req.params.id,
-    product: req.params.productId,
+    delete v._id;
+    return v;
   });
 
-  if (!variant) return next(new AppError("No variant found with that ID", 404));
+  try {
+    variants.forEach((v) => validateRequest(createProductVariantSchema, v));
 
-  res.status(204).json({
-    status: "success",
-    data: null,
-  });
-});
+    const docs = await VariantService.createMany({
+      product,
+      variants,
+      session,
+    });
+
+    await product.updateAggregates(session);
+
+    return docs;
+  } catch (err) {
+    throw err;
+  }
+};
+
+/**
+ * ============================
+ * UPDATE (single or multiple)
+ * ============================
+ */
+exports.updateVariant = async ({ variantsData, product, session }) => {
+  try {
+    // Parse attributes if string
+    const variants = variantsData.map((v) => {
+      if (v.attributes && typeof v.attributes === "string") {
+        v.attributes = JSON.parse(v.attributes);
+      }
+      return v;
+    });
+
+    variants.forEach((v) => validateRequest(updateProductVariantSchema, v));
+
+    const result = await VariantService.updateManyVariants({
+      product,
+      variants,
+      session,
+    });
+
+    return result;
+  } catch (err) {
+    throw err;
+  }
+};
+
+/**
+ * ============================
+ * DELETE (single or multiple)
+ * ============================
+ */
+exports.deleteVariant = async ({ productId, variants, session = null }) => {
+  try {
+    // const variantsIds = variants.map((v) => v._id);
+
+    await VariantService.deleteMany({
+      ids: variants,
+      productId,
+      session,
+    });
+
+    const product = await Product.findById(productId).session(session);
+    await product.updateAggregates(session);
+
+    return {
+      status: "success",
+      message: "Variants deleted successfully",
+    };
+  } catch (error) {
+    throw error;
+  }
+};

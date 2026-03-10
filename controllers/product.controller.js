@@ -1,366 +1,391 @@
+const factory = require("./factoryHandler");
 const Product = require("../models/Product");
 const catchAsync = require("../utils/catchAsync");
-const AppError = require("../utils/AppError");
-const APIFeatures = require("../utils/APIFeatures");
+const { uploadImages } = require("../config/multer");
 const validateRequest = require("../utils/validateRequest");
 const {
   createProductSchema,
   updateProductSchema,
 } = require("../validations/productValidation");
-const slugify = require("slugify");
-const { uploadImages } = require("../config/multer");
-const sharp = require("sharp");
-const fs = require("fs/promises");
+const ImageService = require("../services/image.service");
 const path = require("path");
-const { generateSKU, generateBarcode } = require("../utils/skuGenerator");
-const { deleteFiles, createDir } = require("../utils/fileHandler");
+const AppError = require("../utils/AppError");
+const {
+  createVariant,
+  deleteVariant,
+  updateVariant,
+} = require("./productVariant.controller");
+const { withTransaction } = require("../utils/withTransaction");
+const ProductVariant = require("../models/ProductVariant");
 
-const UPLOADED_IMAGES_PATH = path.join(__dirname, "../public/images/products");
-
-/**
- * Upload product images
- * main_image and variant_images
- * main_image Input: main_image
- * variant_images Input: variant_images[i]
- */
 exports.uploadProductImgs = uploadImages.any();
 
-// Utility function to get all images from a product (main + all variant images)
-const getAllProductImages = (product) => {
-  const images = [];
-
-  if (product.main_image) {
-    images.push(product.main_image);
-  }
-
-  if (product.variants && Array.isArray(product.variants)) {
-    product.variants.forEach((variant) => {
-      if (variant.images && Array.isArray(variant.images)) {
-        images.push(...variant.images);
-      }
-    });
-  }
-
-  return images;
-};
-
-exports.resizeProductImgs = catchAsync(async (req, res, next) => {
-  // Initialize tracking arrays
-  req.uploadedImages = [];
-  req.imagesToDelete = [];
-
-  if (!req.files) {
-    return next();
-  }
-
-  try {
-    // Parse variants once if needed
-    if (req.body.variants && typeof req.body.variants === "string") {
-      req.body.variants = JSON.parse(req.body.variants);
-    }
-
-    await fs.mkdir(UPLOADED_IMAGES_PATH, { recursive: true });
-
-    const timestamp = Date.now();
-    const variantImagesMap = {};
-
-    for (const file of req.files) {
-      // MAIN IMAGE
-      if (file.fieldname === "main_image") {
-        const mainImageName = `product-${timestamp}-main.jpeg`;
-        const mainImagePath = path.join(UPLOADED_IMAGES_PATH, mainImageName);
-
-        await sharp(file.buffer)
-          .resize(500, 500)
-          .toFormat("jpeg")
-          .jpeg({ quality: 90 })
-          .toFile(mainImagePath);
-
-        req.body.main_image = mainImageName;
-        req.uploadedImages.push(mainImageName);
-        continue;
-      }
-
-      // VARIANT IMAGES
-      const match = file.fieldname.match(/variant_images\[(\d+)\]/);
-
-      if (match) {
-        const variantIndex = Number(match[1]);
-        if (!variantImagesMap[variantIndex])
-          variantImagesMap[variantIndex] = [];
-
-        const filename = `product-${timestamp}-${variantIndex}-${variantImagesMap[variantIndex].length}.jpeg`;
-        const variantImagePath = path.join(UPLOADED_IMAGES_PATH, filename);
-
-        await sharp(file.buffer)
-          .resize(600, 350)
-          .toFormat("jpeg")
-          .jpeg({ quality: 90 })
-          .toFile(variantImagePath);
-
-        variantImagesMap[variantIndex].push(filename);
-        req.uploadedImages.push(filename);
-      }
-    }
-
-    // Attach images to variants and ensure each variant has at least one image
-    if (req.body.variants && Array.isArray(req.body.variants)) {
-      req.body.variants.forEach((variant, index) => {
-        const newUploadedImages = variantImagesMap[index];
-
-        // If new images were uploaded for this variant
-        if (newUploadedImages && newUploadedImages.length > 0) {
-          // If variant already has images (existing images client wants to keep), merge with new uploads
-          if (variant.images && Array.isArray(variant.images)) {
-            variant.images = [...variant.images, ...newUploadedImages];
-          } else {
-            variant.images = newUploadedImages;
-          }
-        }
-
-        // For create operation, ensure variant has at least one image
-        if (
-          !req.params.id &&
-          (!variant.images || variant.images.length === 0)
-        ) {
-          throw new AppError(
-            `Variant ${index + 1} must have at least one image`,
-            400,
-          );
-        }
-      });
-    }
-
-    next();
-  } catch (error) {
-    // Clean up any images that were uploaded before the error
-    if (req.uploadedImages && req.uploadedImages.length > 0) {
-      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
-    }
-    throw error; // Re-throw to be caught by catchAsync
-  }
-});
-
-exports.getAllProducts = catchAsync(async (req, res, next) => {
-  const features = new APIFeatures(Product.find(), req.query)
-    .filter()
-    .sort()
-    .limitFields()
-    .paginate();
-
-  const products = await features.query;
-
-  res.status(200).json({
-    status: "success",
-    results: products.length,
-    data: {
-      products,
-    },
-  });
-});
+exports.getAllProducts = factory.getAll(Product);
 
 exports.getProduct = catchAsync(async (req, res, next) => {
   const product = await Product.findById(req.params.id);
 
-  if (!product) return next(new AppError("No product found with that ID", 404));
+  if (!product) {
+    return next(new AppError("No product found with that ID", 404));
+  }
 
   res.status(200).json({
     status: "success",
-    data: {
-      product,
-    },
+    data: { product },
   });
 });
 
 exports.addProduct = catchAsync(async (req, res, next) => {
+  const productImageService = new ImageService(
+    path.join(__dirname, "../public/images/products/main"),
+  );
+  await productImageService.ensureDirectory();
+  const variantsImageService = new ImageService(
+    path.join(__dirname, "../public/images/products/variants"),
+  );
+  await variantsImageService.ensureDirectory();
+
   try {
-    // Convert SEO
+    // ---------- Parse JSON fields ----------
     if (req.body.seo && typeof req.body.seo === "string") {
       req.body.seo = JSON.parse(req.body.seo);
     }
 
-    // Validate request
-    validateRequest(createProductSchema, req.body);
-
-    // Generate SKU and Barcode for each variant
-    if (req.body.variants && Array.isArray(req.body.variants)) {
-      req.body.variants.forEach((variant, index) => {
-        variant.sku = generateSKU({
-          title: req.body.title,
-          attributes: variant.attributes,
-          index,
-        });
-        variant.barCode = generateBarcode();
-      });
+    // ---------- Main Image ----------
+    const mainImageFile = req.files?.find(
+      (file) => file.fieldname === "main_image",
+    );
+    if (!mainImageFile) {
+      throw new AppError("Main image is required", 400);
     }
 
-    // Create product in DB
-    const product = await Product.create(req.body);
+    const mainImageName = await productImageService.processImage({
+      buffer: mainImageFile.buffer,
+      type: "PRODUCT_MAIN",
+    });
 
-    // Clear uploaded images tracking on success
-    req.uploadedImages = [];
+    req.body.main_image = `/public/images/products/main/${mainImageName}`;
+
+    if (req.body.variants?.length) {
+      // Parse JSON fields
+      if (typeof req.body.variants === "string")
+        req.body.variants = JSON.parse(req.body.variants);
+
+      // process variants images
+      for (let i = 0; i < req.body.variants.length; i++) {
+        // find files for this variant by fieldname
+        const variantFiles = req.files.filter((file) =>
+          file.fieldname.startsWith(`variant_images_${i}_`),
+        );
+
+        if (variantFiles.length) {
+          const variantsImages = await Promise.all(
+            variantFiles.map(async (file) => {
+              const filename = await variantsImageService.processImage({
+                buffer: file.buffer,
+                type: "PRODUCT_VARIANT",
+              });
+              return `/public/images/products/variants/${filename}`;
+            }),
+          );
+          req.body.variants[i].images = variantsImages;
+        }
+      }
+    }
+
+    validateRequest(createProductSchema, req.body);
+    // ---------- Product Validate ----------
+
+    // ---------- Create Product and Variants ----------
+    const result = await withTransaction(async (session) => {
+      const product = await Product.create([req.body], { session });
+
+      if (req.body.variants?.length) {
+        // Create variants
+        await createVariant({
+          variantsData: req.body.variants,
+          product: product[0],
+          session,
+        });
+      }
+
+      variantsImageService.commit();
+
+      return { product: product[0] };
+    });
+
+    productImageService.commit();
 
     res.status(201).json({
       status: "success",
-      data: { product },
+      data: result,
     });
-  } catch (error) {
-    // Rollback: Delete uploaded images if product creation fails
-    if (req.uploadedImages && req.uploadedImages.length > 0) {
-      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
-    }
-    throw error; // Re-throw to be caught by catchAsync
+  } catch (err) {
+    // rollback images
+    await variantsImageService.rollback();
+    await productImageService.rollback();
+    next(err);
   }
 });
 
 exports.updateProduct = catchAsync(async (req, res, next) => {
-  // Get existing product first to handle image management
-  const existingProduct = await Product.findById(req.params.id);
+  const productImageService = new ImageService(
+    path.join(__dirname, "../public/images/products/main"),
+  );
+  const variantsImageService = new ImageService(
+    path.join(__dirname, "../public/images/products/variants"),
+  );
+  await productImageService.ensureDirectory();
+  await variantsImageService.ensureDirectory();
 
-  if (!existingProduct) {
-    // Clean up any uploaded images if product doesn't exist
-    if (req.uploadedImages && req.uploadedImages.length > 0) {
-      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
-    }
-    return next(new AppError("No product found with that ID", 404));
-  }
+  const imagesToDelete = {
+    main_image: [],
+    variant_images: [],
+  };
+
   try {
-    if (req.body.seo && typeof req.body.seo === "string")
+    // Parse SEO fields if coming as string
+    if (req.body.seo && typeof req.body.seo === "string") {
       req.body.seo = JSON.parse(req.body.seo);
-
-    // Parse variants if provided as string
+    }
+    // Parse variant fields if coming as string
     if (req.body.variants && typeof req.body.variants === "string") {
       req.body.variants = JSON.parse(req.body.variants);
     }
 
+    // Get the existing product
+    const product = await Product.findById(req.params.id);
+    if (!product)
+      return next(new AppError("No product found with that ID", 404));
+
+    // Handle main image upload
+    const mainImageFile = req.files?.find(
+      (file) => file.fieldname === "main_image",
+    );
+    if (mainImageFile) {
+      const filename = await productImageService.processImage({
+        buffer: mainImageFile.buffer,
+        type: "PRODUCT_MAIN",
+      });
+
+      // Mark old main image for deletion
+      if (product.main_image)
+        imagesToDelete.main_image.push(product.main_image);
+
+      req.body.main_image = `/public/images/products/main/${filename}`;
+    }
+
+    // ================= VARIANTS PROCESS =================
+    let deletedVariantIds = [];
+    let newVariants = [];
+    let existingVariants = [];
+
+    if (req.body.variants?.length) {
+      // Get existing variants
+      const dbVariants = await ProductVariant.find({
+        product: product._id,
+      });
+
+      // Convert existing variants to map
+      const dbVariantMap = new Map(
+        dbVariants.map((v) => [v._id.toString(), v]),
+      );
+
+      // Get incoming variant ids
+      const incomingIds = req.body.variants
+        .filter((v) => v._id)
+        .map((v) => v._id.toString());
+
+      // Get deleted variant ids
+      deletedVariantIds = dbVariants
+        .filter((v) => !incomingIds.includes(v._id.toString()))
+        .map((v) => v._id);
+
+      // Get new variants
+      newVariants = req.body.variants.filter((v) => !v._id);
+
+      // Get existing variants
+      existingVariants = req.body.variants.filter((v) => v._id);
+
+      // ======== HANDLE VARIANT IMAGES ========
+      for (let i = 0; i < req.body.variants.length; i++) {
+        const variant = req.body.variants[i];
+
+        const variantFiles = req.files?.filter((file) =>
+          file.fieldname.startsWith(`variants[${i}][images]`),
+        );
+
+        let uploadedImages = [];
+
+        if (variantFiles?.length) {
+          uploadedImages = await Promise.all(
+            variantFiles.map(async (file) => {
+              const filename = await variantsImageService.processImage({
+                buffer: file.buffer,
+                type: "PRODUCT_VARIANT",
+              });
+
+              return `/public/images/products/variants/${filename}`;
+            }),
+          );
+        }
+
+        const keepImages = [...(variant.images || []), ...uploadedImages];
+
+        const mergedImages = [...new Set(keepImages)];
+
+        if (variant._id) {
+          const dbVariant = dbVariantMap.get(variant._id.toString());
+
+          const removedImages = (dbVariant?.images || []).filter(
+            (img) => !mergedImages.includes(img),
+          );
+
+          imagesToDelete.variant_images.push(...removedImages);
+        }
+
+        variant.images = mergedImages;
+      }
+
+      // ===== delete images of deleted variants =====
+      deletedVariantIds.forEach((id) => {
+        const v = dbVariantMap.get(id.toString());
+        if (v?.images?.length) imagesToDelete.variant_images.push(...v.images);
+      });
+    }
+
+    // Validate updated product
     validateRequest(updateProductSchema, req.body);
 
-    if (req.body.title)
-      req.body.slug = slugify(req.body.title, { lower: true });
-
-    // Handle main image replacement
-    if (req.body.main_image) {
-      // If a new main image was uploaded, mark old one for deletion
-      if (
-        existingProduct.main_image &&
-        existingProduct.main_image !== req.body.main_image
-      ) {
-        req.imagesToDelete.push(existingProduct.main_image);
+    // ================= TRANSACTION =================
+    const result = await withTransaction(async (session) => {
+      const productToUpdate = await Product.findById(product._id).session(
+        session,
+      );
+      if (!productToUpdate) {
+        throw new AppError("No product found with that ID", 404);
       }
-    }
 
-    // Handle variant images
-    if (req.body.variants && Array.isArray(req.body.variants)) {
-      const existingVariants = existingProduct.variants || [];
-
-      // Delete images from variants that were removed (exist in DB but not in update)
-      existingVariants.forEach((existingVariant, existingIndex) => {
-        // Check if this variant still exists (by comparing index or other identifier)
-        // If the update has fewer variants, delete images from removed variants
-        if (existingIndex >= req.body.variants.length) {
-          if (existingVariant.images && Array.isArray(existingVariant.images)) {
-            existingVariant.images.forEach((img) => {
-              req.imagesToDelete.push(img);
-            });
-          }
-        }
+      // Update product fields
+      Object.keys(req.body).forEach((key) => {
+        productToUpdate[key] = req.body[key];
       });
 
-      req.body.variants.forEach((variant, index) => {
-        const existingVariant = existingVariants[index];
+      // DELETE VARIANTS
+      if (deletedVariantIds.length) {
+        console.log(deletedVariantIds);
+        await deleteVariant({
+          productId: productToUpdate._id,
+          variants: deletedVariantIds,
+          session,
+        });
+      }
 
-        if (existingVariant && existingVariant.images) {
-          // If variant has new images uploaded, merge or replace
-          if (variant.images && Array.isArray(variant.images)) {
-            // Check which existing images are being removed
-            const existingImages = existingVariant.images || [];
-            const newImages = variant.images;
+      // UPDATE VARIANTS
+      if (existingVariants.length) {
+        await updateVariant({
+          variantsData: existingVariants,
+          product: productToUpdate,
+          session,
+        });
+      }
 
-            // Find images that exist in DB but not in new request (marked for deletion)
-            existingImages.forEach((existingImg) => {
-              // If the existing image is not in the new images array and not in uploaded images
-              // it means it's being removed
-              if (
-                !newImages.includes(existingImg) &&
-                !req.uploadedImages.includes(existingImg)
-              ) {
-                req.imagesToDelete.push(existingImg);
-              }
-            });
+      // CREATE VARIANTS
+      if (newVariants.length) {
+        await createVariant({
+          product: productToUpdate,
+          variantsData: newVariants,
+          session,
+        });
+      }
 
-            // Merge: keep existing images that are still in the new array, add new uploaded ones
-            const imagesToKeep = existingImages.filter((img) =>
-              newImages.includes(img),
-            );
-            const newUploadedImages = newImages.filter((img) =>
-              req.uploadedImages.includes(img),
-            );
-            variant.images = [...imagesToKeep, ...newUploadedImages];
-          } else {
-            // If no images provided in variant, keep existing images
-            variant.images = existingVariant.images;
-          }
-        }
-      });
-    } else {
-      // If variants not provided in update, keep existing variants
-      req.body.variants = existingProduct.variants;
-    }
+      // Save product
+      await productToUpdate.save({ session });
+      await productToUpdate.updateAggregates(session);
 
-    // Update product in DB
-    const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
+      return productToUpdate.toObject();
     });
 
-    if (!product) {
-      // Clean up uploaded images if update fails
-      if (req.uploadedImages && req.uploadedImages.length > 0) {
-        await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
-      }
-      return next(new AppError("No product found with that ID", 404));
-    }
+    variantsImageService.commit();
+    productImageService.commit();
 
-    // Delete old images that were replaced (only after successful update)
-    if (req.imagesToDelete && req.imagesToDelete.length > 0) {
-      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.imagesToDelete);
+    // Delete old main image and old variant images from server
+    if (imagesToDelete) {
+      await productImageService.deleteImages(imagesToDelete?.main_image || []);
+      await variantsImageService.deleteImages(
+        imagesToDelete?.variant_images || [],
+      );
     }
-
-    // Clear uploaded images tracking on success
-    req.uploadedImages = [];
 
     res.status(200).json({
       status: "success",
-      data: {
-        product,
-      },
+      data: { ...result },
     });
-  } catch (error) {
-    // Rollback: Delete uploaded images if update fails
-    if (req.uploadedImages && req.uploadedImages.length > 0) {
-      await deleteFiles(UPLOADED_IMAGES_PATH, ...req.uploadedImages);
-    }
-    throw error; // Re-throw to be caught by catchAsync
+  } catch (err) {
+    await productImageService.rollback();
+    await variantsImageService.rollback();
+    throw err;
   }
 });
 
 exports.deleteProduct = catchAsync(async (req, res, next) => {
-  // Get product first to access images before deletion
-  const product = await Product.findById(req.params.id);
+  const { id } = req.params;
+  const productImageService = new ImageService(
+    path.join(__dirname, "../public/images/products/main"),
+  );
+  await productImageService.ensureDirectory();
 
-  if (!product) return next(new AppError("No product found with that ID", 404));
+  const imageVariantService = new ImageService(
+    path.join(__dirname, "../public/images/products/variants"),
+  );
+  await imageVariantService.ensureDirectory();
 
-  // Delete all product images
-  const allImages = getAllProductImages(product);
-  if (allImages.length > 0) {
-    await deleteFiles(UPLOADED_IMAGES_PATH, ...allImages);
+  try {
+    let productData = null;
+    let imagesToDelete = [];
+
+    await withTransaction(async (session) => {
+      // Find product with variants
+      const product = await Product.findById(id).session(session);
+      if (!product) {
+        throw new AppError("No product found with that ID", 404);
+      }
+
+      // Get all variants for this product
+      const variants = await ProductVariant.find({ product: id }).session(
+        session,
+      );
+
+      if (variants.length > 0) {
+        // Delete variants
+        await deleteVariant({
+          productId: product._id,
+          variants,
+          session,
+        });
+
+        const variantsImages = variants.flatMap((v) => v.images);
+        imagesToDelete.push(...variantsImages);
+      }
+
+      await Product.findByIdAndDelete(id, { session });
+
+      productData = product;
+    });
+
+    // Delete images from server
+    if (productData.main_image) {
+      await productImageService.deleteImages([productData.main_image]);
+    }
+    if (imagesToDelete.length > 0) {
+      await imageVariantService.deleteImages([...new Set(imagesToDelete)]);
+    }
+
+    res.status(204).json({
+      status: "success",
+      data: null,
+    });
+  } catch (error) {
+    next(error);
   }
-
-  // Delete product from DB
-  await Product.findByIdAndDelete(req.params.id);
-
-  res.status(204).json({
-    status: "success",
-    data: null,
-  });
 });

@@ -4,6 +4,7 @@ const AppError = require("../utils/AppError");
 const User = require("../models/User");
 const catchAsync = require("../utils/catchAsync");
 const validateRequest = require("../utils/validateRequest");
+const factory = require("./factoryHandler");
 const {
   updateMeSchema,
   adminUpdateUserSchema,
@@ -12,25 +13,24 @@ const sharp = require("sharp");
 const { uploadImages } = require("../config/multer");
 const APIFeatures = require("../utils/APIFeatures");
 
+const ImageService = require("../services/image.service");
+const { CONSTANTS } = require("../utils/constants");
+
 exports.uploadUserPhoto = uploadImages.single("photo");
 
 exports.resizeUserPhoto = catchAsync(async (req, res, next) => {
   if (!req.file) return next();
 
   const folderPath = path.join(__dirname, "../public/images/users");
+  const imageService = new ImageService(folderPath);
 
-  // Create folder if it doesn't exist
-  if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
-  }
+  await imageService.ensureDirectory();
 
-  const filename = `user-${req.params.id || req.user.id}-${Date.now()}.jpeg`;
-
-  await sharp(req.file.buffer)
-    .resize(500, 500)
-    .toFormat("jpeg")
-    .jpeg({ quality: 90 })
-    .toFile(path.join(folderPath, filename));
+  const filename = await imageService.processImage(
+    req.file.buffer,
+    CONSTANTS.IMAGE_RESIZE.USER,
+    `user-${req.params.id || req.user.id}`,
+  );
 
   req.file.filename = filename;
 
@@ -48,7 +48,7 @@ const filterObj = (obj, ...allowedFields) => {
 exports.getAllUsers = catchAsync(async (req, res, next) => {
   const features = new APIFeatures(
     User.find({ _id: { $ne: req.user.id } }),
-    req.query
+    req.query,
   )
     .filter()
     .sort()
@@ -71,18 +71,7 @@ exports.getMe = catchAsync(async (req, res, next) => {
   next();
 });
 
-exports.getUser = catchAsync(async (req, res, next) => {
-  const user = await User.findById(req.params.id);
-  if (!user) {
-    return next(new AppError("No user found with that ID", 404));
-  }
-  res.status(200).json({
-    status: "success",
-    data: {
-      user,
-    },
-  });
-});
+exports.getUser = factory.getOneById(User);
 
 exports.updateMe = catchAsync(async (req, res, next) => {
   if (req.body.password || req.body.passwordConfirm) {
@@ -126,7 +115,7 @@ exports.updateUserByAdmin = catchAsync(async (req, res, next) => {
     "email",
     "username",
     "role",
-    "active"
+    "active",
   );
 
   if (req.body.email) {
@@ -141,7 +130,7 @@ exports.updateUserByAdmin = catchAsync(async (req, res, next) => {
     {
       new: true,
       runValidators: true,
-    }
+    },
   );
 
   res.status(200).json({

@@ -1,137 +1,154 @@
 const Category = require("../models/Category");
-const APIFeatures = require("../utils/APIFeatures");
 const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/AppError");
 const { uploadImages } = require("../config/multer");
-const sharp = require("sharp");
 const path = require("path");
-const fs = require("fs");
 const validateRequest = require("../utils/validateRequest");
+const factory = require("./factoryHandler");
 const {
   createCategorySchema,
   updateCategorySchema,
 } = require("../validations/categoryValidation");
-const { default: slugify } = require("slugify");
+const ImageService = require("../services/image.service");
 
 exports.uploadCategoryImage = uploadImages.single("image");
 
-exports.resizeCategoryImage = catchAsync(async (req, res, next) => {
-  if (!req.file) return next();
+exports.getAllCategories = factory.getAll(Category);
 
-  const folderPath = path.join(__dirname, "../public/images/categories");
-
-  // Create folder if it doesn't exist
-  if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
-  }
-
-  const filename = `category-${Date.now()}.jpeg`;
-
-  await sharp(req.file.buffer)
-    .resize(500, 500)
-    .toFormat("jpeg")
-    .jpeg({ quality: 90 })
-    .toFile(path.join(folderPath, filename));
-
-  req.file.filename = filename;
-
-  next();
-});
-
-exports.getAllCategories = catchAsync(async (req, res, next) => {
-  const features = await new APIFeatures(Category.find(), req.query)
-    .filter()
-    .sort()
-    .limitFields()
-    .paginate();
-
-  const categories = await features.query;
-
-  res.status(200).json({
-    status: "success",
-    results: categories.length,
-    data: {
-      categories,
-    },
-  });
-});
-
-exports.getCategory = catchAsync(async (req, res, next) => {
-  const category = await Category.findById(req.params.id);
-
-  if (!category)
-    return next(new AppError("No category found with that ID", 404));
-
-  res.status(200).json({
-    status: "success",
-    data: {
-      category,
-    },
-  });
-});
+exports.getCategory = factory.getOneById(Category);
 
 exports.createCategory = catchAsync(async (req, res, next) => {
+  const imageService = new ImageService(
+    path.join(__dirname, "../public/images/categories"),
+  );
+  await imageService.ensureDirectory();
+
+  if (req.body.seo && typeof req.body.seo === "string") {
+    req.body.seo = JSON.parse(req.body.seo);
+  }
+
   validateRequest(createCategorySchema, req.body);
 
-  if (req.file) {
-    req.body.image = req.file.filename;
-  }
+  try {
+    if (req.file) {
+      const categoryImage = await imageService.processImage({
+        buffer: req.file.buffer,
+        type: "CATEGORY",
+      });
 
-  // Check if parent category exists
-  if (req.body.parentCategory) {
-    const exists = await Category.findById(req.body.parentCategory);
-    if (!exists) {
-      return next(new AppError("No parent category found with that ID", 404));
+      req.body.image = `/public/images/categories/${categoryImage}`;
     }
+
+    // Check if parent category exists
+    if (req.body.parentCategory) {
+      const exists = await Category.findById(req.body.parentCategory);
+      if (!exists) {
+        return next(new AppError("No parent category found with that ID", 404));
+      }
+    }
+
+    const newCategory = await Category.create(req.body);
+    imageService.commit();
+
+    res.status(201).json({
+      status: "success",
+      data: {
+        category: newCategory,
+      },
+    });
+  } catch (err) {
+    await imageService.rollback();
+    throw err;
   }
-
-  const newCategory = await Category.create(req.body);
-
-  res.status(201).json({
-    status: "success",
-    data: {
-      category: newCategory,
-    },
-  });
 });
 
 exports.updateCategory = catchAsync(async (req, res, next) => {
-  validateRequest(updateCategorySchema, req.body);
+  const imageService = new ImageService(
+    path.join(__dirname, "../public/images/categories"),
+  );
+  await imageService.ensureDirectory();
+  const imagesToDelete = [];
 
-  if (req.body.name) req.body.slug = slugify(req.body.name, { lower: true });
+  try {
+    if (req.body.seo && typeof req.body.seo === "string") {
+      req.body.seo = JSON.parse(req.body.seo);
+    }
 
-  if (req.file) {
-    req.body.image = req.file.filename;
+    const category = await Category.findById(req.params.id);
+    if (!category)
+      return next(new AppError("No category found with that ID", 404));
+
+    if (req.file) {
+      const categoryImage = await imageService.processImage({
+        buffer: req.file.buffer,
+        type: "CATEGORY",
+      });
+
+      req.body.image = `/public/images/categories/${categoryImage}`;
+      imagesToDelete.push(category.image);
+    }
+
+    validateRequest(updateCategorySchema, req.body);
+
+    // Check if parent category exists
+    if (req.body.parentCategory) {
+      if (req.body.parentCategory === category._id.toString()) {
+        return next(new AppError("Category cannot be its own parent", 400));
+      }
+      const parentCategory = await Category.findById(req.body.parentCategory);
+      if (!parentCategory) {
+        return next(new AppError("No parent category found with that ID", 404));
+      }
+    }
+
+    Object.keys(req.body).forEach((key) => {
+      category[key] = req.body[key];
+    });
+    await category.save();
+
+    if (imagesToDelete.length > 0) {
+      await imageService.deleteImages(imagesToDelete);
+    }
+    imageService.commit();
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        category,
+      },
+    });
+  } catch (err) {
+    await imageService.rollback();
+    throw err;
   }
-
-  // Check if parent category exists
-  if (req.body.parentCategory) {
-    const parentCategory = await Category.findById(req.body.parentCategory);
-    if (!parentCategory)
-      return next(new AppError("No parent category found with that ID", 404));
-  }
-
-  const category = await Category.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true,
-  });
-
-  if (!category)
-    return next(new AppError("No category found with that ID", 404));
-
-  res.status(200).json({
-    status: "success",
-    data: {
-      category,
-    },
-  });
 });
 
 exports.deleteCategory = catchAsync(async (req, res, next) => {
-  const category = await Category.findByIdAndDelete(req.params.id);
+  const imageService = new ImageService(
+    path.join(__dirname, "../public/images/categories"),
+  );
+  await imageService.ensureDirectory();
 
-  if (!category)
+  // Check if category exists
+  const category = await Category.findById(req.params.id);
+  if (!category) {
     return next(new AppError("No category found with that ID", 404));
+  }
+
+  // Prevent deletion if it has child categories
+  const children = await Category.find({ parentCategory: req.params.id });
+  if (children.length > 0) {
+    return next(
+      new AppError("Cannot delete a category that has subcategories", 400),
+    );
+  }
+
+  // Delete category
+  await Category.findByIdAndDelete(req.params.id);
+
+  if (category.image) {
+    await imageService.deleteImages([category.image]);
+  }
 
   res.status(204).json({
     status: "success",

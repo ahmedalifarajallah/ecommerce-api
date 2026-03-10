@@ -1,6 +1,4 @@
 const express = require("express");
-const dotenv = require("dotenv");
-const connectDB = require("./config/db");
 const path = require("path");
 const AppError = require("./utils/AppError");
 const globalErrorHandler = require("./middleware/errorHandler");
@@ -9,6 +7,10 @@ const cors = require("cors");
 const rateLimiter = require("./middleware/rateLimiter");
 const morgan = require("morgan");
 const compression = require("compression");
+const config = require("./config/config");
+const logger = require("./utils/logger");
+
+// Routes
 const authRoutes = require("./routes/auth.routes");
 const cartRoutes = require("./routes/cart.routes");
 const categoryRoutes = require("./routes/category.routes");
@@ -20,26 +22,22 @@ const reviewRoutes = require("./routes/review.routes");
 const wishlistRoutes = require("./routes/wishlist.routes");
 const usersRoutes = require("./routes/user.routes");
 
-dotenv.config();
-
-// uncaughtException
-process.on("uncaughtException", (err) => {
-  console.log("UNCAUGHT EXCEPTION! 💥 Shutting down...");
-  console.error(err.name, err.message);
-  process.exit(1);
-});
-
-connectDB();
-
 const app = express();
 
-// Development logging
-if (process.env.NODE_ENV === "development") {
-  app.use(morgan("dev"));
+// Logging
+if (config.env === "development") {
+  app.use(morgan("dev", { stream: logger.stream }));
+} else {
+  app.use(morgan("combined", { stream: logger.stream }));
 }
 
 // Middlewares
-app.use(cors());
+app.use(
+  cors({
+    origin: config.clientUrl,
+    credentials: true,
+  }),
+);
 app.use(helmet());
 app.use("/api", rateLimiter);
 app.use(express.json({ limit: "20kb" }));
@@ -66,17 +64,4 @@ app.all(/.*/, (req, res, next) =>
 // Global error handler
 app.use(globalErrorHandler);
 
-// Server
-const server = app.listen(process.env.PORT || 5000, () => {
-  console.log(`Server running on port http://localhost:${process.env.PORT}`);
-});
-
-// unhandled Promise rejections
-process.on("unhandledRejection", (err) => {
-  console.log("UNHANDLED REJECTION! 💥 Shutting down...");
-  console.error(err);
-
-  server.close(() => {
-    process.exit(1);
-  });
-});
+module.exports = app;

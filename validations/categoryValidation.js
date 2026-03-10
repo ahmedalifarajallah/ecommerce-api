@@ -22,4 +22,5 @@ exports.updateCategorySchema = Joi.object({
   status: Joi.string().valid("active", "inactive").optional(),
   parentCategory: Joi.string().custom(objectId).allow(null).optional(),
   seo: seoSchemaValidate.optional(),
+  image: Joi.string().optional(),
 }).unknown(false);

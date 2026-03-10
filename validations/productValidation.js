@@ -1,32 +1,12 @@
 const Joi = require("joi");
 const { seoSchemaValidate } = require("./seoValidation");
+const {
+  createProductVariantSchema,
+  updateProductVariantSchema,
+} = require("./productVariantValidation");
 const objectId = Joi.string()
   .pattern(/^[0-9a-fA-F]{24}$/)
   .message("Invalid Id");
-
-// ==============================
-// VARIANT VALIDATION
-// ==============================
-const variantSchemaValidate = Joi.object({
-  attributes: Joi.object()
-    .pattern(Joi.string(), Joi.string())
-    .min(1)
-    .required()
-    .messages({
-      "object.min": "At least one attribute (like size or color) is required",
-    }),
-  price: Joi.number().min(0).required(),
-  discountPrice: Joi.number()
-    .min(0)
-    .max(Joi.ref("price"))
-    .messages({ "number.max": "Discount price cannot be greater than price" })
-    .optional(),
-  quantity: Joi.number().min(0).required(),
-  images: Joi.array().items(Joi.string()).min(1).required(),
-  isAvailable: Joi.boolean().optional(),
-  sku: Joi.string().trim().allow(null, ""),
-  barCode: Joi.string().trim().allow(null, ""),
-});
 
 // ==============================
 // CREATE PRODUCT VALIDATION
@@ -40,7 +20,7 @@ exports.createProductSchema = Joi.object({
   status: Joi.string().valid("active", "inactive").default("active"),
   tags: Joi.array().items(Joi.string()).optional(),
   seo: seoSchemaValidate.optional(),
-  variants: Joi.array().items(variantSchemaValidate).min(1).optional(), // embedded variants
+  variants: Joi.array().items(createProductVariantSchema).min(1).optional(), // embedded variants
 }).unknown(false);
 
 // ==============================
@@ -55,7 +35,8 @@ exports.updateProductSchema = Joi.object({
   status: Joi.string().valid("active", "inactive"),
   tags: Joi.array().items(Joi.string()),
   seo: seoSchemaValidate.optional(),
-  variants: Joi.array().items(variantSchemaValidate).min(1).optional(), // embedded variants,  allow updates
+  variants: Joi.array().items(updateProductVariantSchema).optional(), // embedded variants,  allow updates
+  slug: Joi.string().optional(),
 })
   .min(1)
   .unknown(false);

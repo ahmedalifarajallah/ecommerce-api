@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const slugify = require("slugify");
 const { seoSchema } = require("./Seo");
-const productVariantSchema = require("./ProductVariant");
+const ProductVariant = require("./ProductVariant");
 
 const productSchema = new mongoose.Schema(
   {
@@ -30,12 +30,8 @@ const productSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    variants: {
-      type: [productVariantSchema],
-      validate: (v) => v.length > 0,
-    },
     isAvailable: { type: Boolean, default: true },
-    slug: { type: String, index: true, unique: true },
+    slug: { type: String, unique: true },
     tags: [{ type: String, trim: true, lowercase: true }],
     seo: seoSchema,
   },
@@ -54,27 +50,34 @@ productSchema.pre("save", function (next) {
   next();
 });
 
-// Product Min Price and Total Stock
-productSchema.pre("save", function (next) {
-  if (this.variants?.length) {
-    // Set isAvailable per variant
-    this.variants.forEach((v) => {
-      v.isAvailable = v.quantity > 0;
-    });
+// Virtual populate for variants
+productSchema.virtual("variants", {
+  ref: "ProductVariant",
+  localField: "_id",
+  foreignField: "product",
+});
 
-    // Set minPrice
-    this.minPrice = Math.min(
-      ...this.variants.map((v) => v.discountPrice || v.price),
-    );
-
-    // Set totalStock
-    this.totalStock = this.variants.reduce((sum, v) => sum + v.quantity, 0);
-
-    // Product-level availability
-    this.isAvailable = this.variants.some((v) => v.isAvailable);
-  }
+productSchema.pre(/^find/, function (next) {
+  this.populate("variants").populate("categories");
   next();
 });
+
+// Product Min Price and Total Stock
+productSchema.methods.updateAggregates = async function (session) {
+  const variants = await mongoose
+    .model("ProductVariant")
+    .find({ product: this._id }, null, { session });
+
+  this.minPrice =
+    variants.length > 0
+      ? Math.min(...variants.map((v) => v.discountPrice || v.price))
+      : 0;
+
+  this.totalStock = variants.reduce((sum, v) => sum + v.quantity, 0);
+  this.isAvailable = variants.some((v) => v.quantity > 0);
+
+  await this.save({ session });
+};
 
 // Product Index
 productSchema.index({
@@ -82,7 +85,7 @@ productSchema.index({
   description: "text",
   tags: "text",
 });
-productSchema.index({ slug: 1 });
+// productSchema.index({ slug: 1 }); // Removed to fix duplicate index warning
 productSchema.index({ categories: 1 });
 
 const Product = mongoose.model("Product", productSchema);

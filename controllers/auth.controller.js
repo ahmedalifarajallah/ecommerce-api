@@ -24,7 +24,7 @@ const createSendToken = (user, statusCode, message, res) => {
 
   const cookieOptions = {
     expires: new Date(
-      Date.now() + process.env.JWT_COOKIE_EXPIRES_IN * 24 * 60 * 60 * 1000
+      Date.now() + process.env.JWT_COOKIE_EXPIRES_IN * 24 * 60 * 60 * 1000,
     ),
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -36,8 +36,11 @@ const createSendToken = (user, statusCode, message, res) => {
 
   res.status(statusCode).json({
     status: "success",
-    token,
-    data: { user },
+    data: {
+      user,
+      //  token,
+      message,
+    },
   });
 };
 
@@ -77,7 +80,7 @@ exports.register = catchAsync(async (req, res, next) => {
     await new Email(user, "", otp).sendEmailVerificationOTP();
   } catch (error) {
     return next(
-      new AppError("There was an error sending the OTP. Try again later!", 500)
+      new AppError("There was an error sending the OTP. Try again later!", 500),
     );
   }
 
@@ -128,7 +131,7 @@ exports.forgotPassword = catchAsync(async (req, res, next) => {
 
   // Send reset token to user's email
   const url = `${req.protocol}://${req.get(
-    "host"
+    "host",
   )}/api/v1/auth/reset-password/${resetToken}`;
 
   try {
@@ -144,8 +147,8 @@ exports.forgotPassword = catchAsync(async (req, res, next) => {
     return next(
       new AppError(
         "There was an error sending the email. Try again later!",
-        500
-      )
+        500,
+      ),
     );
   }
 });
@@ -187,7 +190,7 @@ exports.updatePassword = catchAsync(async (req, res, next) => {
   // Check current password
   const correctPassword = await user.correctPassword(
     req.body.currentPassword,
-    user.password
+    user.password,
   );
 
   if (!correctPassword) {

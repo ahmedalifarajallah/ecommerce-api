@@ -1,6 +1,8 @@
 const AppError = require("../utils/AppError");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const cookie = require("cookie");
+// const cookieParser = require("cookie-parser");
 
 exports.protect = async (req, res, next) => {
   let token;
@@ -11,6 +13,9 @@ exports.protect = async (req, res, next) => {
     req.headers.authorization.startsWith("Bearer")
   ) {
     token = req.headers.authorization.split(" ")[1];
+  } else if (req.headers.cookie) {
+    const cookies = cookie.parse(req.headers.cookie);
+    token = cookies.jwt;
   }
 
   if (!token) {
@@ -29,7 +34,7 @@ exports.protect = async (req, res, next) => {
   // check if user changed password after token was issued
   if (currentUser.changedPasswordAfter(decoded.iat)) {
     return next(
-      new AppError("User recently changed password! Please log in again.", 401)
+      new AppError("User recently changed password! Please log in again.", 401),
     );
   }
 
@@ -41,7 +46,7 @@ exports.restrictTo = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
       return next(
-        new AppError("You do not have permission to perform this action", 403)
+        new AppError("You do not have permission to perform this action", 403),
       );
     }
 

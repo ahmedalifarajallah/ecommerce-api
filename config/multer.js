@@ -14,5 +14,5 @@ const multerImagesFilter = (req, file, cb) => {
 exports.uploadImages = multer({
   storage: multerStorage,
   fileFilter: multerImagesFilter,
-  // limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
